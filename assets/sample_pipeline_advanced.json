@@ -1,0 +1,237 @@
+{
+  "id": 7,
+  "name": "Microservices Platform Release",
+  "artifacts": [
+    {
+      "alias": "_Platform-CI",
+      "type": "Build",
+      "definitionReference": {
+        "definition": { "id": "99", "name": "Platform-CI" },
+        "project": { "id": "proj-002", "name": "PlatformTeam" },
+        "defaultVersionBranch": { "id": "release/*", "name": "release/*" }
+      }
+    },
+    {
+      "alias": "_Config-Repo",
+      "type": "Git",
+      "definitionReference": {
+        "definition": { "id": "55", "name": "PlatformTeam/platform-config" },
+        "project": { "id": "proj-002", "name": "PlatformTeam" },
+        "defaultVersionBranch": { "id": "main", "name": "main" }
+      }
+    }
+  ],
+  "variables": {
+    "AksClusterName": { "value": "platform-aks", "isSecret": false },
+    "AksResourceGroup": { "value": "platform-rg", "isSecret": false },
+    "AzureSubscription": { "value": "sc-platform", "isSecret": false },
+    "HelmChartVersion": { "value": "1.0.0", "isSecret": false },
+    "AcrName": { "value": "platformacr", "isSecret": false },
+    "KubeConfig": { "value": "", "isSecret": true }
+  },
+  "environments": [
+    {
+      "id": 10,
+      "name": "Integration Testing",
+      "rank": 1,
+      "variables": {
+        "Namespace": { "value": "integration", "isSecret": false },
+        "ReplicaCount": { "value": "1", "isSecret": false }
+      },
+      "conditions": [
+        { "conditionType": 1, "name": "_Platform-CI" }
+      ],
+      "preDeployApprovals": {
+        "approvals": [{ "isAutomated": true, "rank": 1 }]
+      },
+      "postDeployApprovals": {
+        "approvals": [{ "isAutomated": true, "rank": 1 }]
+      },
+      "environmentOptions": {
+        "timeoutInMinutes": 30
+      },
+      "deployPhases": [
+        {
+          "name": "Run DB Migrations",
+          "phaseType": 2,
+          "deploymentInput": {},
+          "workflowTasks": [
+            {
+              "taskId": "2ca8fe15-42ea-4b26-80f1-e0738ec17e89",
+              "name": "Run Migrations via Azure CLI",
+              "version": "2.*",
+              "enabled": true,
+              "inputs": {
+                "azureSubscription": "$(AzureSubscription)",
+                "scriptType": "bash",
+                "scriptLocation": "inlineScript",
+                "inlineScript": "az aks command invoke -g $(AksResourceGroup) -n $(AksClusterName) --command \"kubectl exec deploy/migrations -- dotnet ef database update\""
+              }
+            }
+          ]
+        },
+        {
+          "name": "Deploy Services",
+          "phaseType": 1,
+          "deploymentInput": {
+            "agentPool": { "name": "Azure Pipelines" },
+            "timeoutInMinutes": 30
+          },
+          "workflowTasks": [
+            {
+              "taskId": "8d2c8a62-c4d0-49a3-8c3e-0a0b7a3a8b3a",
+              "name": "Deploy to AKS",
+              "version": "0.*",
+              "enabled": true,
+              "inputs": {
+                "action": "deploy",
+                "kubernetesServiceConnection": "$(AzureSubscription)",
+                "namespace": "$(Namespace)",
+                "manifests": "$(System.ArtifactsDirectory)/_Platform-CI/drop/k8s/**/*.yaml",
+                "containers": "$(AcrName).azurecr.io/platform:$(Build.BuildId)"
+              }
+            },
+            {
+              "taskId": "71a9a2d3-a98a-4caa-96ab-affca411ecda",
+              "name": "Wait for rollout",
+              "version": "2.*",
+              "enabled": true,
+              "inputs": {
+                "script": "kubectl rollout status deployment/platform-api -n $(Namespace) --timeout=300s"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "name": "Performance Tests",
+      "rank": 2,
+      "variables": {},
+      "conditions": [
+        { "conditionType": 4, "name": "Integration Testing", "value": "4" }
+      ],
+      "preDeployApprovals": {
+        "approvals": [{ "isAutomated": true, "rank": 1 }]
+      },
+      "postDeployApprovals": {
+        "approvals": [
+          { "isAutomated": false, "rank": 1, "approver": { "displayName": "Performance Lead" } }
+        ]
+      },
+      "deployPhases": [
+        {
+          "name": "Load Test",
+          "phaseType": 1,
+          "parallelExecution": {
+            "parallelExecutionType": 2,
+            "multiplier": "LoadProfile"
+          },
+          "deploymentInput": {
+            "agentPool": { "name": "Azure Pipelines" },
+            "timeoutInMinutes": 60
+          },
+          "workflowTasks": [
+            {
+              "taskId": "de9ce4e3-d547-43cc-b7df-b8571f54b9fb",
+              "name": "Run k6 Load Test",
+              "version": "3.*",
+              "enabled": true,
+              "inputs": {
+                "targetType": "inline",
+                "script": "k6 run --vus 50 --duration 2m $(Build.SourcesDirectory)/tests/load/smoke.js"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "name": "Production",
+      "rank": 3,
+      "variables": {
+        "Namespace": { "value": "production", "isSecret": false },
+        "ReplicaCount": { "value": "3", "isSecret": false }
+      },
+      "conditions": [
+        { "conditionType": 4, "name": "Performance Tests", "value": "4" }
+      ],
+      "preDeployApprovals": {
+        "approvals": [
+          { "isAutomated": false, "rank": 1, "approver": { "displayName": "Platform Lead" } },
+          { "isAutomated": false, "rank": 2, "approver": { "displayName": "CTO" } }
+        ]
+      },
+      "postDeployApprovals": {
+        "approvals": [
+          { "isAutomated": false, "rank": 1, "approver": { "displayName": "Platform Lead" } }
+        ]
+      },
+      "environmentOptions": {
+        "timeoutInMinutes": 120
+      },
+      "deployPhases": [
+        {
+          "name": "Deploy to Production AKS",
+          "phaseType": 1,
+          "deploymentInput": {
+            "agentPool": { "name": "Production-Agents" },
+            "timeoutInMinutes": 120
+          },
+          "workflowTasks": [
+            {
+              "taskId": "94a74903-f93f-4075-884f-dc11f34058b4",
+              "name": "Fetch Secrets from Key Vault",
+              "version": "2.*",
+              "enabled": true,
+              "inputs": {
+                "azureSubscription": "$(AzureSubscription)",
+                "KeyVaultName": "platform-keyvault-prod",
+                "SecretsFilter": "DbConnectionString,ApiKey"
+              }
+            },
+            {
+              "taskId": "8d2c8a62-c4d0-49a3-8c3e-0a0b7a3a8b3a",
+              "name": "Deploy to Production AKS",
+              "version": "0.*",
+              "enabled": true,
+              "inputs": {
+                "action": "deploy",
+                "kubernetesServiceConnection": "$(AzureSubscription)",
+                "namespace": "$(Namespace)",
+                "manifests": "$(System.ArtifactsDirectory)/_Platform-CI/drop/k8s/**/*.yaml",
+                "containers": "$(AcrName).azurecr.io/platform:$(Build.BuildId)",
+                "rolloutStatusTimeout": "300"
+              }
+            },
+            {
+              "taskId": "71a9a2d3-a98a-4caa-96ab-affca411ecda",
+              "name": "Post-deploy Health Check",
+              "version": "2.*",
+              "enabled": true,
+              "condition": "succeeded()",
+              "inputs": {
+                "script": "Invoke-RestMethod -Uri 'https://platform.example.com/health' -Method GET"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "triggers": [
+    {
+      "triggerType": 1,
+      "artifactAlias": "_Platform-CI"
+    },
+    {
+      "triggerType": 2,
+      "schedule": {
+        "cronExpression": "0 1 * * 0",
+        "branchFilter": { "include": ["release/*"] }
+      }
+    }
+  ]
+}
