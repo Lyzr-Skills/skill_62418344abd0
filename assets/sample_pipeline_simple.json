@@ -1,0 +1,208 @@
+{
+  "id": 1,
+  "name": "MyApp Release Pipeline",
+  "artifacts": [
+    {
+      "alias": "_MyApp-CI",
+      "type": "Build",
+      "definitionReference": {
+        "definition": { "id": "42", "name": "MyApp-CI" },
+        "project": { "id": "proj-001", "name": "MyProject" },
+        "defaultVersionBranch": { "id": "main", "name": "main" }
+      }
+    }
+  ],
+  "variables": {
+    "WebAppName": { "value": "myapp-webapp", "isSecret": false },
+    "ResourceGroup": { "value": "myapp-rg", "isSecret": false },
+    "AzureSubscription": { "value": "sc-myapp-prod", "isSecret": false },
+    "DatabaseConnectionString": { "value": "", "isSecret": true }
+  },
+  "environments": [
+    {
+      "id": 1,
+      "name": "Development",
+      "rank": 1,
+      "variables": {
+        "Slot": { "value": "dev", "isSecret": false }
+      },
+      "conditions": [
+        { "conditionType": 1, "name": "_MyApp-CI", "value": "" }
+      ],
+      "preDeployApprovals": {
+        "approvals": [
+          { "isAutomated": true, "rank": 1 }
+        ]
+      },
+      "postDeployApprovals": {
+        "approvals": [
+          { "isAutomated": true, "rank": 1 }
+        ]
+      },
+      "deployPhases": [
+        {
+          "name": "Deploy to Dev",
+          "phaseType": 1,
+          "deploymentInput": {
+            "queueId": 5,
+            "queueName": "Azure Pipelines",
+            "agentPool": { "name": "Azure Pipelines" },
+            "timeoutInMinutes": 0
+          },
+          "workflowTasks": [
+            {
+              "taskId": "a8515ec8-7254-4ffd-912c-86772e2b5962",
+              "name": "Download Build Artifacts",
+              "version": "0.*",
+              "enabled": true,
+              "inputs": {
+                "buildType": "specific",
+                "project": "$(System.TeamProjectId)",
+                "pipeline": "42",
+                "artifactName": "drop",
+                "downloadPath": "$(System.ArtifactsDirectory)"
+              }
+            },
+            {
+              "taskId": "497d490f-eea7-4f2b-ab94-48d9c1acdcb1",
+              "name": "Azure App Service Deploy",
+              "version": "4.*",
+              "enabled": true,
+              "inputs": {
+                "ConnectionType": "AzureRM",
+                "azureSubscription": "$(AzureSubscription)",
+                "appType": "webApp",
+                "WebAppName": "$(WebAppName)-dev",
+                "deployToSlotOrASE": "true",
+                "ResourceGroupName": "$(ResourceGroup)",
+                "SlotName": "$(Slot)",
+                "packageForLinux": "$(System.ArtifactsDirectory)/drop/*.zip"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Staging",
+      "rank": 2,
+      "variables": {
+        "Slot": { "value": "staging", "isSecret": false }
+      },
+      "conditions": [
+        { "conditionType": 4, "name": "Development", "value": "4" }
+      ],
+      "preDeployApprovals": {
+        "approvals": [
+          { "rank": 1, "isAutomated": false, "approver": { "displayName": "Release Manager" } }
+        ]
+      },
+      "postDeployApprovals": {
+        "approvals": [
+          { "isAutomated": true, "rank": 1 }
+        ]
+      },
+      "deployPhases": [
+        {
+          "name": "Deploy to Staging",
+          "phaseType": 1,
+          "deploymentInput": {
+            "queueId": 5,
+            "queueName": "Azure Pipelines",
+            "agentPool": { "name": "Azure Pipelines" },
+            "timeoutInMinutes": 60
+          },
+          "workflowTasks": [
+            {
+              "taskId": "497d490f-eea7-4f2b-ab94-48d9c1acdcb1",
+              "name": "Azure App Service Deploy - Staging",
+              "version": "4.*",
+              "enabled": true,
+              "inputs": {
+                "ConnectionType": "AzureRM",
+                "azureSubscription": "$(AzureSubscription)",
+                "appType": "webApp",
+                "WebAppName": "$(WebAppName)-staging",
+                "deployToSlotOrASE": "true",
+                "ResourceGroupName": "$(ResourceGroup)",
+                "SlotName": "$(Slot)",
+                "packageForLinux": "$(System.ArtifactsDirectory)/drop/*.zip"
+              }
+            },
+            {
+              "taskId": "71a9a2d3-a98a-4caa-96ab-affca411ecda",
+              "name": "Run Smoke Tests",
+              "version": "2.*",
+              "enabled": true,
+              "inputs": {
+                "script": "Write-Host 'Running smoke tests...'\n$response = Invoke-WebRequest -Uri 'https://$(WebAppName)-staging.azurewebsites.net/health'\nif ($response.StatusCode -ne 200) { exit 1 }"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Production",
+      "rank": 3,
+      "variables": {},
+      "conditions": [
+        { "conditionType": 4, "name": "Staging", "value": "4" }
+      ],
+      "preDeployApprovals": {
+        "approvals": [
+          { "rank": 1, "isAutomated": false, "approver": { "displayName": "CTO" } },
+          { "rank": 2, "isAutomated": false, "approver": { "displayName": "Engineering Lead" } }
+        ]
+      },
+      "postDeployApprovals": {
+        "approvals": [
+          { "rank": 1, "isAutomated": false, "approver": { "displayName": "Release Manager" } }
+        ]
+      },
+      "deployPhases": [
+        {
+          "name": "Deploy to Production",
+          "phaseType": 1,
+          "deploymentInput": {
+            "queueId": 10,
+            "agentPool": { "name": "Production-Agents" },
+            "timeoutInMinutes": 120
+          },
+          "workflowTasks": [
+            {
+              "taskId": "497d490f-eea7-4f2b-ab94-48d9c1acdcb1",
+              "name": "Azure App Service Deploy - Production",
+              "version": "4.*",
+              "enabled": true,
+              "inputs": {
+                "ConnectionType": "AzureRM",
+                "azureSubscription": "$(AzureSubscription)",
+                "appType": "webApp",
+                "WebAppName": "$(WebAppName)",
+                "packageForLinux": "$(System.ArtifactsDirectory)/drop/*.zip"
+              }
+            },
+            {
+              "taskId": "d9bafed4-0b18-4f58-968d-86655b4d2ce9",
+              "name": "Notify Slack",
+              "version": "2.*",
+              "enabled": false,
+              "inputs": {
+                "script": "echo Deployment complete"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "triggers": [
+    {
+      "triggerType": 1,
+      "artifactAlias": "_MyApp-CI"
+    }
+  ]
+}
