@@ -1,0 +1,134 @@
+{
+  "skill_name": "azure-pipeline-converter",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I have an Azure DevOps Classic Release Pipeline that I need to convert to YAML. Here's the JSON export file: assets/sample_pipeline_simple.json. Please convert it to a YAML pipeline I can commit to my repo.",
+      "expected_output": "A valid Azure Pipelines YAML file with: trigger: none, resources block with pipeline artifact, pipeline-level variables block, 3 stages (Development, Staging, Production), each stage with a deployment job using AzureRmWebAppDeployment@4 task, APPROVAL REQUIRED comments on Staging and Production, a disabled task comment for the Notify Slack step, and migration notes summarizing TODOs.",
+      "files": ["assets/sample_pipeline_simple.json"],
+      "assertions": [
+        {
+          "text": "Output YAML contains 'trigger: none'",
+          "type": "string_match",
+          "value": "trigger: none"
+        },
+        {
+          "text": "Output YAML contains all 3 stage names: Development, Staging, Production",
+          "type": "all_strings_present",
+          "values": ["Development", "Staging", "Production"]
+        },
+        {
+          "text": "Output YAML references AzureRmWebAppDeployment@4 task",
+          "type": "string_match",
+          "value": "AzureRmWebAppDeployment@4"
+        },
+        {
+          "text": "Output YAML includes APPROVAL REQUIRED comment for Production stage",
+          "type": "string_match",
+          "value": "APPROVAL REQUIRED"
+        },
+        {
+          "text": "Output YAML marks Notify Slack task as disabled",
+          "type": "string_match",
+          "value": "DISABLED"
+        },
+        {
+          "text": "Output YAML contains pipeline variables (WebAppName, ResourceGroup)",
+          "type": "all_strings_present",
+          "values": ["WebAppName", "ResourceGroup"]
+        },
+        {
+          "text": "Output YAML includes resources block with pipeline reference",
+          "type": "string_match",
+          "value": "resources:"
+        },
+        {
+          "text": "Output includes migration notes or TODO comments",
+          "type": "string_match",
+          "value": "TODO"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Can you help me migrate our Azure Release pipeline to YAML pipeline-as-code? We have a microservices platform with AKS deployments, Key Vault integration, and load tests. The pipeline JSON is in assets/sample_pipeline_advanced.json",
+      "expected_output": "A valid multi-stage YAML file covering: 3 stages (Integration Testing, Performance Tests, Production), agentless job for DB migrations, AKS deployment tasks (KubernetesManifest@0), AzureKeyVault@2 task, a matrix strategy block for parallel load testing, 2 pre-approval comments for Production, a schedule block (cron), multiple resource blocks for both build and git artifacts, and secret variable handling.",
+      "files": ["assets/sample_pipeline_advanced.json"],
+      "assertions": [
+        {
+          "text": "Output YAML contains 3 stage names: Integration_Testing (or Integration Testing), Performance_Tests, Production",
+          "type": "any_strings_present",
+          "values": ["Integration", "Performance", "Production"]
+        },
+        {
+          "text": "Output YAML contains schedules block with cron expression",
+          "type": "string_match",
+          "value": "cron:"
+        },
+        {
+          "text": "Output YAML contains KubernetesManifest@0 or Kubernetes task",
+          "type": "any_strings_present",
+          "values": ["KubernetesManifest", "Kubernetes"]
+        },
+        {
+          "text": "Output YAML contains AzureKeyVault@2 task",
+          "type": "string_match",
+          "value": "AzureKeyVault"
+        },
+        {
+          "text": "Output YAML handles secret variable (KubeConfig) with appropriate comment",
+          "type": "string_match",
+          "value": "secret"
+        },
+        {
+          "text": "Output YAML includes APPROVAL REQUIRED comment for Production (2 approvers)",
+          "type": "string_match",
+          "value": "APPROVAL REQUIRED"
+        },
+        {
+          "text": "Output YAML contains resources: block with at least one pipeline reference",
+          "type": "string_match",
+          "value": "pipelines:"
+        },
+        {
+          "text": "Output YAML references both artifact sources (Platform-CI and Config-Repo)",
+          "type": "any_strings_present",
+          "values": ["Platform", "Config", "platform-config"]
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "We're modernizing our DevOps setup and need to convert our classic release pipeline to YAML. Can you explain what changes I need to make after conversion and what things can't be automatically migrated? Use assets/sample_pipeline_simple.json as an example.",
+      "expected_output": "A YAML conversion output plus a clear, detailed migration guide that explains: what approvals need to be reconfigured as Environment Checks, how variable groups/secrets work in YAML pipelines, what agent pool names to verify, how the artifact trigger maps to resources.pipelines, and any other gaps between Classic Release and YAML pipelines.",
+      "files": ["assets/sample_pipeline_simple.json"],
+      "assertions": [
+        {
+          "text": "Response includes explanation of approval migration to Environment Checks",
+          "type": "any_strings_present",
+          "values": ["Environment Checks", "Environments", "approval", "APPROVAL"]
+        },
+        {
+          "text": "Response mentions variable groups or Library",
+          "type": "any_strings_present",
+          "values": ["Variable Group", "variable group", "Library", "Variable Library"]
+        },
+        {
+          "text": "Response includes the generated YAML with trigger: none",
+          "type": "string_match",
+          "value": "trigger: none"
+        },
+        {
+          "text": "Response mentions agent pool verification",
+          "type": "any_strings_present",
+          "values": ["agent pool", "pool", "TODO"]
+        },
+        {
+          "text": "Response includes next steps or action items",
+          "type": "any_strings_present",
+          "values": ["next step", "Next step", "commit", "configure", "TODO"]
+        }
+      ]
+    }
+  ]
+}
